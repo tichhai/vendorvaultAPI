@@ -1,0 +1,51 @@
+# Node.js
+node_modules/
+npm-debug.log
+yarn-debug.log
+yarn-error.log
+
+# dotenv environment variables
+.env
+.env.*
+
+# Prisma
+prisma/.env
+prisma/dev.db
+
+# VSCode
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
+*.log
+
+# Build output
+dist/
+build/
+
+# Uploads
+src/upload/uploads/
+
+# Misc
+*.local
+.idea/
+
+# Ignore database dumps
+*.sql
+*.sqlite
+
+# Ignore coverage
+coverage/
+
+# Ignore test output
+*.test.js.snap
+
+# Ignore sensitive files
+secrets/
+
+# Ignore generated files
+*.generated.*
