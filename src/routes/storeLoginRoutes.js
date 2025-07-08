@@ -42,6 +42,7 @@ async function authMiddleware(req, res, next) {
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
     req.tokenUser = decoded;
+    req.storeId = decoded.storeId; 
     next();
   } catch (err) {
     return res
@@ -50,8 +51,8 @@ async function authMiddleware(req, res, next) {
   }
 }
 
-// GET /manager/passport/user/info
-router.get("/info", authMiddleware, async (req, res) => {
+// GET /store/passport/login/userLogin
+router.get("/login/userLogin", authMiddleware, async (req, res) => {
   const tokenUser = req.tokenUser;
   if (!tokenUser || !tokenUser.username) {
     return res.status(401).json(resultErrorMsg("No token", 401));
@@ -73,7 +74,8 @@ router.get("/info", authMiddleware, async (req, res) => {
 });
 
 // Sử dụng upload.none() để parse form-data cho route login
-router.post("/login", upload.none(), async (req, res) => {
+// GET /store/passport/login/userLogin
+router.post("/login/userLogin", upload.none(), async (req, res) => {
   let username = req.body?.username
   let password = req.body?.password 
   if (!username)
@@ -85,7 +87,7 @@ router.post("/login", upload.none(), async (req, res) => {
       .status(400)
       .json(resultErrorMsg("Password cannot be empty", 400));
   try {
-    const user = await prisma.admin_user.findUnique({ where: { username } });
+    const user = await prisma.user.findUnique({ where: { username },include: { store: true } });
     if (!user || user.password !== password) {
       return res
         .status(401)
@@ -94,12 +96,14 @@ router.post("/login", upload.none(), async (req, res) => {
     const payload = {
       id: Number(user.id), // ép BigInt -> Number
       username: user.username,
+      storeId: Number(user.store.id), 
+      paymentDueDate: user.store.payment_due_date || null,
     };
     const token = jwt.sign(payload, JWT_SECRET, { expiresIn: "1d" });
     const refreshToken = jwt.sign(payload, JWT_REFRESH_SECRET, {
       expiresIn: "7d",
     });
-    return res.json(resultData({ accessToken: token, refreshToken }));
+    return res.json(resultData({ accessToken: token, refreshToken,storeLogo: user.store[0]?.store_logo || null }));
   } catch (err) {
     console.error("Login error:", err);
     return res.status(500).json(resultErrorMsg("Internal server error", 500));
@@ -127,7 +131,7 @@ async function refreshTokenService(refreshToken) {
     return { accessToken: newAccessToken, refreshToken: newRefreshToken };
 }
 
-router.get('/refresh/:refreshToken', async (req, res) => {
+router.get('/login/refresh/:refreshToken', async (req, res) => {
     try {
         const { refreshToken } = req.params;
         const data = await refreshTokenService(refreshToken);
@@ -141,17 +145,52 @@ router.get('/refresh/:refreshToken', async (req, res) => {
     }
 });
 
-// POST /manager/passport/user/logout
-router.post('/logout', async (req, res) => {
+// POST /store/passport/login/logout
+router.post('/login/logout', async (req, res) => {
   const token = req.header('accessToken');
   if (!token) {
     return res.status(401).json(resultErrorMsg('No accessToken', 401));
   }
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
-    res.json(resultSuccessMsg('Logout successful', 200));
+    res.json(resultSuccessMsg())
   } catch (err) {
     return res.status(401).json(resultErrorMsg('The token is invalid or expired.', 401));
+  }
+});
+
+// POST /store/passport/login/modifyPass
+router.post('/login/modifyPass',authMiddleware, async (req, res) => {
+  const { password, newPassword } = req.body; 
+  const username = req.tokenUser.username;
+
+  if (!username) {
+    return res.status(401).json({ code: 401, message: 'No username', data: null });
+  }
+  if (!password || !newPassword) {
+    return res.status(400).json({ code: 400, message: 'No Password Data', data: null });
+  }
+
+  try {
+    const member = await prisma.user.findUnique({ where: { username} });
+    if (!member) {
+      return res.status(404).json({ code: 404, message: 'User doesnt exist!', data: null });
+    }
+
+    // Kiểm tra mật khẩu cũ
+    const match = password === member.password; 
+    if (!match) {
+      return res.status(400).json({ code: 400, message: 'Password do no not match', data: null });
+    }
+
+    const updatedMember = await prisma.user.update({
+      where: { username },
+      data: { password: newPassword }
+    });
+
+    res.json(resultData());
+  } catch (error) {
+    res.status(500).json({ code: 500, message: error.message, data: null });
   }
 });
 

@@ -55,7 +55,8 @@ router.get('/goods/list', async (req, res) => {
       take: parseInt(pageSize),
       orderBy: { id: 'desc' },
       include: {
-        store:true
+        store:true,
+        goods_gallery:true
       }
     }),
     prisma.goods.count({ where })
@@ -127,7 +128,6 @@ router.put('/goods/:goodsId/under', async (req, res) => {
 // GET /manager/goods/goods/get/:id
 router.get('/goods/get/:id', async (req, res) => {
   const { id } = req.params;
-  // Lấy goods, include store, category, goods_gallery, goods_sku
   const goods = await prisma.goods.findUnique({
     where: { id: Number(id) },
     include: {
@@ -149,7 +149,6 @@ router.get('/goods/get/:id', async (req, res) => {
   const skuList = goods.goods_sku?.map(sku => ({
     ...sku,
     price: sku.price && typeof sku.price.toNumber === 'function' ? sku.price.toNumber() : sku.price,
-    cost: sku.cost && typeof sku.cost.toNumber === 'function' ? sku.cost.toNumber() : sku.cost,
     small: sku.small,
     original: sku.original,
     goodsName: sku.goods_name || goods.goods_name, 
@@ -176,7 +175,6 @@ router.get('/goods/get/:id', async (req, res) => {
     goodsName: goods.goods_name,
     price: toNumber(goods.price),
     brandId: goods.brand_id?.toString(),
-    goodsUnit: goods.goods_unit,
     sellingPoint: goods.selling_point,
     marketEnable: goods.market_enable,
     intro: goods.intro,
@@ -202,7 +200,7 @@ router.get('/goods/get/:id', async (req, res) => {
     goodsGalleryList,
     skuList,
     wholesaleList: null,
-    goodsUnit: goods.goods_unit_goods_goods_unit ? goods.goods_unit_goods_goods_unit.name : null,
+    goodsUnit: goods.goods_unit_goods_goods_unitTogoods_unit ? goods.goods_unit_goods_goods_unitTogoods_unit.name : null,
   };
 
   res.json({
@@ -229,7 +227,8 @@ router.get('/goods/auth/list', async (req, res) => {
       take: parseInt(pageSize),
       orderBy: { id: 'desc' },
       include: {
-        store: { select: { store_name: true } }
+        store: { select: { store_name: true } },
+        goods_gallery:true
       }
     }),
     prisma.goods.count({ where })
@@ -258,16 +257,19 @@ router.put('/goods/:goodsId/auth', async (req, res) => {
   if (!authFlag) {
     return res.status(400).json(resultError('The audit result cannot be empty'));
   }
-
+  try{
   const updateResult = await prisma.goods.update({
     where: { id: goodsId  },
     data: { auth_flag: authFlag }
   });
-
-  if (updateResult) {
-    res.json(resultSuccess());
-  } else {
-    res.status(400).json(resultError('GOODS_AUTH_ERROR'));
+  await prisma.goods_sku.updateMany({
+    where: { goods_id: goodsId },
+    data: { auth_flag: authFlag }
+  });
+  res.json(resultSuccess());
+} catch (err) {
+    console.error('GOODS_AUTH_ERROR:', err);
+    res.status(500).json(resultError('GOODS_AUTH_ERROR', err.message || err));
   }
 });
 
@@ -513,8 +515,13 @@ router.get('/categorySpec/:category_id', async (req, res) => {
 router.post('/categoryBrand/:category_id', async (req, res) => {
   const { category_id } = req.params;
   let categoryBrands = req.body.categoryBrands || req.query.categoryBrands;
+  // Nếu là chuỗi dạng '16,17' thì tách thành mảng
   if (typeof categoryBrands === 'string') {
-    categoryBrands = [categoryBrands];
+    if (categoryBrands.includes(',')) {
+      categoryBrands = categoryBrands.split(',').map(x => x.trim()).filter(Boolean);
+    } else {
+      categoryBrands = [categoryBrands];
+    }
   }
   if (!Array.isArray(categoryBrands)) {
     return res.json({ code: 400, message: 'categoryBrands must be an array', data: null });

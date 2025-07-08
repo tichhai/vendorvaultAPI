@@ -423,25 +423,34 @@ router.get('/statistics/index/goodsStatistics', async (req, res) => {
 // GET /manager/statistics/index/storeStatistics
 router.get('/statistics/index/storeStatistics', async (req, res) => {
   try {
-    // Lấy tất cả order_item kèm order để lấy store_id
-    const orderItems = await prisma.order_item.findMany({
+    // Lấy tất cả sub_order, mỗi sub_order đã có store_id, sub_total
+    const subOrders = await prisma.sub_order.findMany({
       include: {
-        order: { select: { store_id: true } }
+        store: { select: { id: true, store_name: true } },
+        order_item: true
       }
     });
 
-    // Duyệt qua từng order_item, lấy store_id và cộng dồn tổng doanh thu (sub_total) cho từng cửa hàng
+    // Duyệt qua từng sub_order, cộng dồn tổng doanh thu (sub_total) và tổng số lượng bán ra cho từng cửa hàng
     const storeSalesMap = {};
-    for (const item of orderItems) {
-      const storeId = item.order?.store_id;
+    const storeNumMap = {};
+    for (const sub of subOrders) {
+      const storeId = sub.store_id;
       if (!storeId) continue;
-      const subTotal = item.sub_total && typeof item.sub_total.toNumber === 'function'
-        ? item.sub_total.toNumber()
-        : Number(item.sub_total) || 0;
+      const subTotal = sub.sub_total && typeof sub.sub_total.toNumber === 'function'
+        ? sub.sub_total.toNumber()
+        : Number(sub.sub_total) || 0;
       if (!storeSalesMap[storeId]) {
         storeSalesMap[storeId] = 0;
       }
       storeSalesMap[storeId] += subTotal;
+
+      // Tổng số lượng bán ra
+      if (!storeNumMap[storeId]) {
+        storeNumMap[storeId] = 0;
+      }
+      const totalNum = (sub.order_item || []).reduce((sum, item) => sum + (item.num || 0), 0);
+      storeNumMap[storeId] += totalNum;
     }
 
     // Sắp xếp và lấy top 10
@@ -459,15 +468,11 @@ router.get('/statistics/index/storeStatistics', async (req, res) => {
     storeInfo.forEach(s => { storeMap[s.id] = s.store_name; });
 
     const stores = sortedStores.map(([storeId, totalSales]) => {
-      // Tính tổng số lượng bán ra cho từng store
-      const totalNum = orderItems
-        .filter(item => item.order?.store_id && item.order.store_id.toString() === storeId)
-        .reduce((sum, item) => sum + (item.num || 0), 0);
       return {
         storeId: storeId.toString(),
         storeName: storeMap[BigInt(storeId)] || null,
         price: totalSales,
-        num: totalNum
+        num: storeNumMap[storeId] || 0
       };
     });
     res.json(resultData(stores));

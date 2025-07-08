@@ -25,76 +25,109 @@ function resultSuccess() {
 
 // GET /manager/order/order
 router.get('/order', async (req, res) => {
-  const { pageNum = 1, pageSize = 10,storeId,memberId,orderStatus, orderSn, endDate, startDate, ...otherParams } = req.query;
+  const { pageNum = 1, pageSize = 10, storeId, memberId, orderStatus, orderSn, endDate, startDate, ...otherParams } = req.query;
 
+  // Build where clause for main order
   const where = {};
-  if (orderSn) where.id = orderSn;
+  if (orderSn) where.sn = orderSn;
   if (orderStatus) where.order_status = orderStatus;
   if (startDate || endDate) {
     where.create_time = {};
     if (startDate) where.create_time.gte = new Date(startDate);
     if (endDate) where.create_time.lte = new Date(endDate);
   }
-  // Nếu có memberId thì chỉ lấy order của member đó, không có thì lấy tất cả
   if (memberId) {
-    where.member_id = memberId;
+    where.member_id = Number(memberId);
   }
+
+  // If storeId is provided, filter orders that have at least one sub_order with that storeId
+  let subOrderWhere = {};
   if (storeId) {
-    where.store_id = storeId;
+    subOrderWhere.store_id = Number(storeId);
   }
-  const [records, total] = await Promise.all([
+
+  // Query paginated orders with nested sub_orders (and store if needed)
+  const [orders, total] = await Promise.all([
     prisma.order.findMany({
       where,
       skip: (parseInt(pageNum) - 1) * parseInt(pageSize),
       take: parseInt(pageSize),
       orderBy: { id: 'desc' },
-      include:{
-        user:true
+      include: {
+        user: true,
+        sub_order: {
+          where: Object.keys(subOrderWhere).length > 0 ? subOrderWhere : undefined,
+          include: {
+            store: { select: { id: true, store_name: true } },
+            order_item: true
+          }
+        }
       }
     }),
-    prisma.order.count({ where })
+    prisma.order.count({
+      where: {
+        ...where,
+        ...(storeId
+          ? {
+              sub_order: {
+                some: { store_id: Number(storeId) }
+              }
+            }
+          : {})
+      }
+    })
   ]);
 
-  // Lấy danh sách storeId duy nhất từ records
-  const storeIds = [...new Set(records.map(r => r.store_id).filter(Boolean))];
-  let storeMap = {};
-  if (storeIds.length > 0) {
-    const stores = await prisma.store.findMany({
-      where: { id: { in: storeIds } },
-      select: { id: true, store_name: true }
-    });
-    storeMap = stores.reduce((acc, s) => { acc[s.id] = s.store_name; return acc; }, {});
+  // Helper to convert Decimal to number
+  function toNumber(val) {
+    return val && typeof val.toNumber === 'function' ? val.toNumber() : val;
   }
 
-  // Gán storeName vào từng order, chuyển flowPrice, goodsPrice về number, và format create_time
-  const recordsWithStoreName = records.map(record => {
-    // Format create_time sang dd-mm-yyyy
-    let formattedCreateTime = record.create_time;
-    if (formattedCreateTime) {
-      const date = new Date(formattedCreateTime);
-      const day = String(date.getDate()).padStart(2, '0');
-      const month = String(date.getMonth() + 1).padStart(2, '0');
-      const year = date.getFullYear();
-      formattedCreateTime = `${day}-${month}-${year}`;
-    }
+  // Format create_time to dd-mm-yyyy
+  function formatDate(dt) {
+    if (!dt) return null;
+    const date = new Date(dt);
+    const day = String(date.getDate()).padStart(2, '0');
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const year = date.getFullYear();
+    return `${day}-${month}-${year}`;
+  }
+
+  // Flatten and format the result
+  const records = orders.map(order => {
+    // If storeId is provided, only include sub_orders for that store
+    const subOrders = order.sub_order || [];
+    // For each sub_order, include storeName and format order_item
+    const formattedSubOrders = subOrders.map(sub => ({
+      ...sub,
+      storeName: sub.store ? sub.store.store_name : null,
+      subTotal: toNumber(sub.sub_total),
+      create_time: formatDate(sub.create_time),
+      order_item: (sub.order_item || []).map(item => ({
+        ...item,
+        unitPrice: toNumber(item.unit_price),
+        subTotal: toNumber(item.sub_total),
+      }))
+    }));
+
     return {
-      ...record,
-      storeName: storeMap[record.store_id] || null,
-      flowPrice: record.flow_price && typeof record.flow_price.toNumber === 'function' ? record.flow_price.toNumber() : record.flow_price,
-      goodsPrice: record.goods_price && typeof record.goods_price.toNumber === 'function' ? record.goods_price.toNumber() : record.goods_price,
-      create_time: formattedCreateTime,
-      username: record.user ? record.user.username : null,
+      ...order,
+      flowPrice: toNumber(order.flow_price),
+      goodsPrice: toNumber(order.goods_price),
+      create_time: formatDate(order.create_time),
+      username: order.user ? order.user.username : null,
+      sub_order: formattedSubOrders
     };
   });
 
   const result = {
-    records: recordsWithStoreName,
+    records,
     total,
     size: parseInt(pageSize),
     current: parseInt(pageNum),
     pages: Math.ceil(total / parseInt(pageSize))
   };
-    const camelCaseResult = camelcaseKeys(result, { deep: true });
+  const camelCaseResult = camelcaseKeys(result, { deep: true });
 
   res.json(resultData(camelCaseResult));
 });
@@ -102,60 +135,82 @@ router.get('/order', async (req, res) => {
 // GET /manager/order/order/:orderSn
 router.get('/order/:orderSn', async (req, res) => {
   const { orderSn } = req.params;
-  // Lấy order chi tiết
-  const order = await prisma.order.findUnique({
-    where: { sn: orderSn },
-  });
-  if (!order) {
-    return res.status(404).json({ success: false, message: 'Order not found', code: 404 });
-  }
+  try {
+    // Lấy order chi tiết cùng các sub_order, order_item, goods, goods_gallery, user_evaluation
+    const order = await prisma.order.findUnique({
+      where: { sn: orderSn },
+      include: {
+        user: { select: { username: true } },
+        sub_order: {
+          include: {
+            store: { select: { id: true, store_name: true } },
+            order_item: {
+              include: {
+                goods: {
+                  include: { goods_gallery: true,store: true}
+                },
+                goods_sku: true
+              }
+            }
+          }
+        }
+      }
+    });
+    if (!order) {
+      return res.status(404).json({ success: false, message: 'Order not found', code: 404 });
+    }
 
-  let storeName = null;
-  if (order.store_id) {
-    const store = await prisma.store.findUnique({ where: { id: order.store_id }, select: { store_name: true } });
-    storeName = store ? store.store_name : null;
-  }
+    // Helper to convert Decimal to number
+    function toNumber(val) {
+      return val && typeof val.toNumber === 'function' ? val.toNumber() : val;
+    }
 
-  let memberName = null;
-  if (order.member_id) {
-    const member = await prisma.user.findUnique({ where: { id: order.member_id }, select: { username: true } });
-    memberName = member ? member.username : null;
-  }
+    // Format create_time to dd-mm-yyyy
+    function formatDate(dt) {
+      if (!dt) return null;
+      const date = new Date(dt);
+      const day = String(date.getDate()).padStart(2, '0');
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const year = date.getFullYear();
+      return `${day}-${month}-${year}`;
+    }
 
-  const orderItems = await prisma.order_item.findMany({
-    where: { order_sn: order.sn },
-    orderBy: { id: 'asc' },
-    include: { goods: { select: { goods_name: true } } }
-  });
+    // Format sub_orders
+    const subOrders = (order.sub_order || []).map(sub => ({
+      ...sub,
+      store: sub.store ? { id: sub.store.id, storeName: sub.store.store_name } : null,
+      subTotal: toNumber(sub.sub_total),
+      create_time: formatDate(sub.create_time),
+      orderItem: (sub.order_item || []).map(item => ({
+        ...item,
+        unitPrice: toNumber(item.unit_price),
+        subTotal: toNumber(item.sub_total),
+        goods: item.goods ? {
+          ...item.goods,
+          goodsGallery: item.goods.goods_gallery || []
+        } : null,
+        goodsSku: item.goods_sku || null
+      }))
+    }));
 
-  // decimal -> number do lỗi prisma trả decimal thành object
-  function toNumber(val) {
-    return val && typeof val.toNumber === 'function' ? val.toNumber() : val;
-  }
-
-  // Xử lý orderItems: chuyển decimal về number và thêm goodsName
-  const orderItemsResult = orderItems.map(item => ({
-    ...item,
-    unitPrice: toNumber(item.unit_price),
-    subTotal: toNumber(item.unit_price) * toNumber(item.num),
-    goodsName: item.goods ? item.goods.goods_name : null
-  }));
-
-  // Xử lý order
-  const orderResult = {
-    ...order,
-    storeName,
-    memberName,
-    freightPrice: toNumber(order.freight_price),
-    deleteFlag: false,
-  };
+    const orderResult = {
+      ...order,
+      flowPrice: toNumber(order.flow_price),
+      goodsPrice: toNumber(order.goods_price),
+      create_time: formatDate(order.create_time),
+      username: order.user ? order.user.username : null,
+      subOrder: subOrders
+    };
 
     const camelCaseResult = camelcaseKeys({
-        order: orderResult,
-        orderItems: orderItemsResult,
+      order: orderResult
     }, { deep: true });
 
-  res.json(resultData(camelCaseResult));
+    res.json(resultData(camelCaseResult));
+  } catch (error) {
+    console.error('Error fetching order:', error);
+    res.status(500).json({ success: false, message: 'Internal server error', code: 500 });
+  }
 });
 
 // POST /manager/order/order/:orderSn/pay
@@ -193,17 +248,38 @@ router.post('/order/:orderSn/cancel', async (req, res) => {
 
 // GET /manager/order/paymentLog
 router.get('/paymentLog', async (req, res) => {
-  const { pageNum = 1, pageSize = 10, endDate, startDate, paymentMethod, sn, payStatus, ...otherParams } = req.query;
+  const { pageNum = 1, pageSize = 10, endDate, startDate, sn, payStatus, storeId, ...otherParams } = req.query;
 
-  const where = {};
- 
+  // Build where clause for payment_log
+  const where = { type: 'ORDER' };
   if (sn) where.sn = { contains: sn };
-  if (paymentMethod) where.payment_method = paymentMethod;
   if (payStatus) where.pay_status = payStatus;
   if (startDate || endDate) {
     where.payment_time = {};
     if (startDate) where.payment_time.gte = new Date(startDate);
     if (endDate) where.payment_time.lte = new Date(endDate);
+  }
+
+  // Nếu truyền storeId, chỉ lấy payment_log của sub_order thuộc store đó
+  let subOrderSnList = undefined;
+  if (storeId) {
+    const subOrders = await prisma.sub_order.findMany({
+      where: { store_id: Number(storeId) },
+      select: { order_sn: true }
+    });
+    subOrderSnList = [...new Set(subOrders.map(s => s.order_sn))];
+    if (subOrderSnList.length > 0) {
+      where.sn = { in: subOrderSnList };
+    } else {
+      // Không có đơn nào cho store này
+      return res.json(resultData(camelcaseKeys({
+        records: [],
+        total: 0,
+        size: parseInt(pageSize),
+        current: parseInt(pageNum),
+        pages: 0
+      }, { deep: true })));
+    }
   }
 
   // Truy vấn thêm payStatus của order liên kết nếu chưa có trong payment_log
@@ -215,7 +291,7 @@ router.get('/paymentLog', async (req, res) => {
     });
     const snList = orderIds.map(o => o.sn);
     if (snList.length > 0) {
-      where.order_sn = { in: snList };
+      where.sn = { in: snList };
     } else {
       return res.json(resultData(camelcaseKeys({
         records: [],
@@ -227,7 +303,7 @@ router.get('/paymentLog', async (req, res) => {
     }
   }
 
-  // Lấy dữ liệu phân trang, include order (lấy store) và order.store (lấy store_name)
+  // Lấy dữ liệu phân trang, include order (lấy sub_order và store)
   const [records, total] = await Promise.all([
     prisma.payment_log.findMany({
       where,
@@ -239,7 +315,11 @@ router.get('/paymentLog', async (req, res) => {
           select: {
             payment_method: true,
             pay_status: true,
-            store: { select: { store_name: true } }
+            sub_order: {
+              include: {
+                store: { select: { store_name: true } }
+              }
+            }
           }
         }
       }
@@ -247,9 +327,14 @@ router.get('/paymentLog', async (req, res) => {
     prisma.payment_log.count({ where })
   ]);
 
-
   // Gán storeName, paymentMethod, payStatus vào records và format create_time
   const recordsWithExtra = records.map(r => {
+    // Lấy storeName từ sub_order đầu tiên (nếu có)
+    let storeName = null;
+    if (r.order && r.order.sub_order && r.order.sub_order.length > 0) {
+      const subOrder = r.order.sub_order.find(s => s.store && s.store.store_name);
+      if (subOrder) storeName = subOrder.store.store_name;
+    }
     // Format create_time sang dd-mm-yyyy
     let formattedPaymentTime = r.payment_time;
     if (formattedPaymentTime) {
@@ -261,8 +346,7 @@ router.get('/paymentLog', async (req, res) => {
     }
     return {
       ...r,
-      storeName: r.order?.store?.store_name || null,
-      paymentMethod: r.order?.payment_method || null,
+      storeName,
       payStatus: r.order?.pay_status || null,
       payment_time: formattedPaymentTime
     };

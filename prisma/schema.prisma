@@ -92,26 +92,23 @@ model category_specification {
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 model goods {
-  id                                      BigInt            @id
+  id                                      BigInt            @id @default(autoincrement())
   create_by                               String?           @db.VarChar(255)
   create_time                             DateTime?         @db.DateTime(6)
   update_by                               String?           @db.VarChar(255)
   update_time                             DateTime?         @db.DateTime(6)
   brand_id                                BigInt?
   buy_count                               Int?              @default(0)
-  comment_num                             Int?
-  cost                                    Decimal?          @db.Decimal(10, 2)
+  comment_num                             Int?              @default(0)
   goods_name                              String?           @db.VarChar(255)
   goods_unit                              BigInt?
-  grade                                   Decimal?          @db.Decimal(10, 2)
+  grade                                   Decimal?          @default(0.00) @db.Decimal(10, 2)
   auth_flag                               String?           @db.VarChar(255)
   price                                   Decimal?          @db.Decimal(10, 2)
   quantity                                Int?              @default(0)
   recommend                               Boolean?          @db.Bit(1)
   sales_model                             String?           @db.VarChar(255)
   store_id                                BigInt?
-  sn                                      String?           @db.VarChar(30)
-  weight                                  Decimal?          @db.Decimal(10, 2)
   params                                  String?           @db.Text
   market_enable                           String?           @db.VarChar(255)
   under_message                           String?           @db.VarChar(255)
@@ -134,45 +131,44 @@ model goods {
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 model goods_collection {
-  id          BigInt     @id
+  id          BigInt     @id @default(autoincrement())
   create_time DateTime?  @db.DateTime(6)
   user_id     BigInt?
   sku_id      BigInt?
   user        user?      @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_goods_collection_member_id")
-  goods_sku   goods_sku? @relation(fields: [sku_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_goods_collection_sku_id")
+  goods_sku   goods_sku? @relation(fields: [sku_id], references: [id], onDelete: Cascade, map: "fk_goods_collection_sku_id")
 
-  @@index([sku_id], map: "fk_goods_collection_sku_id")
   @@index([user_id], map: "user_id")
+  @@index([sku_id], map: "fk_goods_collection_sku_id2")
 }
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 model goods_gallery {
-  id        BigInt  @id
+  id        BigInt  @id @default(autoincrement())
   create_by String? @db.VarChar(255)
   goods_id  BigInt?
   original  String? @db.VarChar(255)
   small     String? @db.VarChar(255)
   sort      Int?
-  goods     goods?  @relation(fields: [goods_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_goods_gallery_goods_id")
+  goods     goods?  @relation(fields: [goods_id], references: [id], onDelete: Cascade, map: "fk_goods_gallery_goods_id")
 
-  @@index([goods_id], map: "fk_goods_gallery_goods_id")
+  @@index([goods_id], map: "fk_goods_gallery_goods_id2")
 }
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 model goods_sku {
-  id               BigInt             @id
+  id               BigInt             @id @default(autoincrement())
   create_by        String?            @db.VarChar(255)
   create_time      DateTime?          @db.DateTime(6)
   update_by        String?            @db.VarChar(255)
   update_time      DateTime?          @db.DateTime(6)
   brand_id         BigInt?
-  cost             Decimal?           @db.Decimal(10, 2)
   goods_id         BigInt?
   auth_flag        String?            @db.VarChar(255)
   price            Decimal?           @db.Decimal(10, 2)
   quantity         Int?
   recommend        Boolean            @db.Bit(1)
-  sales_model      String?            @db.VarChar(255)
+  sales_model      String?            @default("RETAIL") @db.VarChar(255)
   store_id         BigInt?
   sn               String?            @db.VarChar(30)
   weight           Decimal?           @db.Decimal(10, 2)
@@ -180,18 +176,19 @@ model goods_sku {
   spec_value_ids   String?            @db.VarChar(255)
   goods_collection goods_collection[]
   brand            brand?             @relation(fields: [brand_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_goods_sku_brand_id")
-  goods            goods?             @relation(fields: [goods_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_goods_sku_goods_id")
+  goods            goods?             @relation(fields: [goods_id], references: [id], onDelete: Cascade, map: "fk_goods_sku_goods_id")
   store            store?             @relation(fields: [store_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_goods_sku_store_id")
+  order_item       order_item[]
   user_evaluation  user_evaluation[]
 
   @@index([brand_id, goods_id, store_id], map: "brand_id")
-  @@index([goods_id], map: "fk_goods_sku_goods_id")
-  @@index([store_id], map: "fk_goods_sku_store_id")
+  @@index([goods_id], map: "fk_goods_sku_goods_id2")
+  @@index([store_id], map: "fk_goods_sku_store_id2")
 }
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 model order {
-  id               BigInt            @id
+  id               BigInt            @id @default(autoincrement())
   create_by        String            @db.VarChar(255)
   create_time      DateTime?         @db.DateTime(6)
   update_by        String?           @db.VarChar(255)
@@ -204,53 +201,39 @@ model order {
   goods_price      Decimal?          @db.Decimal(10, 2)
   member_id        BigInt?
   order_status     String?           @db.VarChar(255)
-  pay_order_no     String?           @db.VarChar(255)
   pay_status       String?           @db.VarChar(255)
-  payment_method   String?           @db.VarChar(255)
+  payment_method   String?           @default("BANK_TRANSFER") @db.VarChar(255)
   remark           String?           @db.VarChar(255)
-  seller_remark    String?           @db.VarChar(255)
-  store_id         BigInt?
   sn               String?           @unique(map: "sn") @db.VarChar(255)
   cancel_reason    String?           @db.VarChar(255)
-  freight_price    String?           @db.VarChar(255)
   user             user?             @relation(fields: [member_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "order_ibfk_1")
-  store            store?            @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "order_store_1")
-  order_item       order_item[]
   payment_log      payment_log[]
+  sub_order        sub_order[]
   user_evaluation  user_evaluation[]
 
-  @@index([store_id], map: "store_id")
   @@index([member_id], map: "member_id")
 }
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 model order_item {
-  id          BigInt    @id
-  create_by   String?   @db.VarChar(255)
-  create_time DateTime? @db.DateTime(6)
-  update_by   String?   @db.VarChar(255)
-  update_time DateTime? @db.DateTime(6)
-  goods_id    BigInt?
-  num         Int?
-  order_sn    String?   @db.VarChar(255)
-  unit_price  Decimal?  @db.Decimal(10, 2)
-  sub_total   Decimal?  @db.Decimal(10, 2)
-  goods       goods?    @relation(fields: [goods_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_order_item_goods_id")
-  order       order?    @relation(fields: [order_sn], references: [sn], onDelete: Cascade, onUpdate: NoAction, map: "fk_order_item_order_sn")
+  id           BigInt     @id @default(autoincrement())
+  create_by    String?    @db.VarChar(255)
+  create_time  DateTime?  @db.DateTime(6)
+  update_by    String?    @db.VarChar(255)
+  update_time  DateTime?  @db.DateTime(6)
+  goods_id     BigInt?
+  sku_id       BigInt?
+  num          Int?
+  unit_price   Decimal?   @db.Decimal(10, 2)
+  sub_total    Decimal?   @db.Decimal(10, 2)
+  sub_order_id BigInt?
+  goods        goods?     @relation(fields: [goods_id], references: [id], onDelete: Cascade, map: "fk_order_item_goods_id")
+  goods_sku    goods_sku? @relation(fields: [sku_id], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "fk_order_item_sku")
+  sub_order    sub_order? @relation(fields: [sub_order_id], references: [id], onDelete: Cascade, map: "fk_order_item_sub_order_id")
 
-  @@index([order_sn], map: "fk_order_item_order_sn")
-  @@index([goods_id, order_sn], map: "goods_id")
-}
-
-model role {
-  id          BigInt      @id
-  create_by   String?     @db.VarChar(255)
-  create_time DateTime?   @db.DateTime(6)
-  update_by   String?     @db.VarChar(255)
-  update_time DateTime?   @db.DateTime(6)
-  description String?     @db.VarChar(255)
-  name        String?     @db.VarChar(255)
-  user_role   user_role[]
+  @@index([goods_id], map: "goods_id")
+  @@index([sku_id], map: "sku_id")
+  @@index([sub_order_id], map: "sub_order_id")
 }
 
 model spec_values {
@@ -283,37 +266,32 @@ model specification {
 
 /// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
 model store {
-  id                   BigInt             @id
+  id                   BigInt             @id @default(autoincrement())
   create_by            String?            @db.VarChar(255)
   create_time          DateTime?          @default(now()) @db.Timestamp(0)
   update_by            String?            @db.VarChar(255)
   update_time          DateTime?          @db.DateTime(6)
-  user_id              BigInt?
   store_disable        String?            @db.VarChar(255)
   store_logo           String?            @db.VarChar(255)
   store_name           String?            @db.VarChar(255)
   store_address_detail String?            @db.VarChar(255)
   store_desc           String?            @db.VarChar(200)
-  service_score        Decimal?           @db.Decimal(10, 2)
-  goods_num            Int?
-  collection_num       Int?
-  stock_warning        Int?
+  stock_warning        Int?               @default(100)
   payment_due_date     DateTime?          @db.DateTime(0)
   email                String?            @db.VarChar(255)
+  mobile               String?            @db.VarChar(255)
   goods                goods[]
   goods_sku            goods_sku[]
-  order                order[]
   payment_log          payment_log[]
   specification        specification[]
-  user                 user?              @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_store_member_id")
   store_collection     store_collection[]
+  sub_order            sub_order[]
+  user                 user[]
   user_evaluation      user_evaluation[]
-
-  @@index([user_id], map: "user_id")
 }
 
 model store_collection {
-  id          BigInt    @id
+  id          BigInt    @id @default(autoincrement())
   create_by   String?   @db.VarChar(255)
   create_time DateTime? @db.DateTime(6)
   update_by   String?   @db.VarChar(255)
@@ -323,102 +301,91 @@ model store_collection {
   user        user?     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_store_collection_member_id")
   store       store?    @relation(fields: [store_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_store_collection_store_id")
 
-  @@index([store_id], map: "fk_store_collection_store_id")
   @@index([user_id, store_id], map: "user_id")
+  @@index([store_id], map: "fk_store_collection_store_id2")
 }
 
 model user {
-  id               BigInt             @id @default(autoincrement())
-  create_by        String?            @db.VarChar(255)
-  create_time      DateTime?          @db.DateTime(6)
-  update_by        String?            @db.VarChar(255)
-  update_time      DateTime?          @db.DateTime(6)
-  birthday         DateTime?          @db.DateTime(6)
-  disabled         Boolean?           @default(dbgenerated("b'0'")) @db.Bit(1)
-  face             String?            @db.VarChar(255)
-  have_store       Boolean?           @db.Bit(1)
-  mobile           String?            @db.VarChar(255)
-  nick_name        String?            @db.VarChar(255)
-  password         String?            @db.VarChar(255)
-  store_id         String?            @db.VarChar(255)
-  username         String?            @unique(map: "username") @db.VarChar(255)
-  goods_collection goods_collection[]
-  order            order[]
-  payment_log      payment_log[]
-  store            store[]
-  store_collection store_collection[]
-  user_address     user_address[]
-  user_evaluation  user_evaluation[]
-  user_role        user_role[]
+  id                              BigInt             @id @default(autoincrement())
+  create_by                       String?            @db.VarChar(255)
+  create_time                     DateTime?          @db.DateTime(6)
+  update_by                       String?            @db.VarChar(255)
+  update_time                     DateTime?          @db.DateTime(6)
+  birthday                        DateTime?          @db.DateTime(6)
+  disabled                        Boolean?           @default(dbgenerated("b'0'")) @db.Bit(1)
+  face                            String?            @db.VarChar(255)
+  mobile                          String?            @db.VarChar(255)
+  nick_name                       String?            @db.VarChar(255)
+  password                        String?            @db.VarChar(255)
+  store_id                        BigInt?
+  username                        String?            @unique(map: "username") @db.VarChar(255)
+  email                           String?            @unique(map: "email") @db.VarChar(255)
+  role                            String?            @default("BUYER") @db.VarChar(255)
+  goods_collection                goods_collection[]
+  message_message_from_userTouser message[]          @relation("message_from_userTouser")
+  message_message_to_userTouser   message[]          @relation("message_to_userTouser")
+  order                           order[]
+  payment_log                     payment_log[]
+  store_collection                store_collection[]
+  talk_talk_user_id1Touser        talk[]             @relation("talk_user_id1Touser")
+  talk_talk_user_id2Touser        talk[]             @relation("talk_user_id2Touser")
+  store                           store?             @relation(fields: [store_id], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "fk_user_store_id")
+  user_address                    user_address[]
+  user_evaluation                 user_evaluation[]
 
   @@index([store_id], map: "store_id")
 }
 
 model user_address {
-  id                        BigInt    @id
-  create_by                 String?   @db.VarChar(255)
-  create_time               DateTime? @db.DateTime(6)
-  update_by                 String?   @db.VarChar(255)
-  update_time               DateTime? @db.DateTime(6)
-  alias                     String?   @db.VarChar(255)
-  consignee_address_id_path String?   @db.VarChar(255)
-  consignee_address_path    String?   @db.VarChar(255)
-  detail                    String?   @db.VarChar(255)
-  is_default                Boolean?  @db.Bit(1)
-  user_id                   BigInt?
-  mobile                    String?   @db.VarChar(255)
-  name                      String?   @db.VarChar(255)
-  user                      user?     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_user_address_member_id")
+  id          BigInt    @id @default(autoincrement())
+  create_by   String?   @db.VarChar(255)
+  create_time DateTime? @db.DateTime(6)
+  update_by   String?   @db.VarChar(255)
+  update_time DateTime? @db.DateTime(6)
+  alias       String?   @db.VarChar(255)
+  detail      String?   @db.VarChar(255)
+  is_default  Boolean?  @db.Bit(1)
+  user_id     BigInt?
+  mobile      String?   @db.VarChar(255)
+  name        String?   @db.VarChar(255)
+  user        user?     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_user_address_member_id")
 
   @@index([user_id], map: "fk_user_address_user_id")
 }
 
 model user_evaluation {
-  id               BigInt     @id
-  create_by        String?    @db.VarChar(255)
-  create_time      DateTime?  @db.DateTime(6)
-  update_by        String?    @db.VarChar(255)
-  update_time      DateTime?  @db.DateTime(6)
-  content          String?    @db.VarChar(500)
-  goods_id         BigInt?
-  images           String?    @db.Text
-  user_id          BigInt?
-  order_no         String?    @db.VarChar(255)
-  reply            String?    @db.VarChar(255)
-  reply_image      String?    @db.Text
-  store_id         BigInt?
-  sku_id           BigInt?
-  status           String?    @db.VarChar(255)
-  service_score    Int?
-  grade            String?    @db.VarChar(255)
-  have_image       Boolean?   @db.Bit(1)
-  have_reply_image Boolean?   @db.Bit(1)
-  goods            goods?     @relation(fields: [goods_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_user_evaluation_goods_id")
-  user             user?      @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_user_evaluation_member_id")
-  order            order?     @relation(fields: [order_no], references: [sn], onDelete: Cascade, onUpdate: NoAction, map: "fk_user_evaluation_order_no")
-  goods_sku        goods_sku? @relation(fields: [sku_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_user_evaluation_sku_id")
-  store            store?     @relation(fields: [store_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_user_evaluation_store_id")
+  id            BigInt     @id @default(autoincrement())
+  create_by     String?    @db.VarChar(255)
+  create_time   DateTime?  @db.DateTime(6)
+  update_by     String?    @db.VarChar(255)
+  update_time   DateTime?  @db.DateTime(6)
+  content       String?    @db.VarChar(500)
+  goods_id      BigInt?
+  images        String?    @db.Text
+  user_id       BigInt?
+  order_no      String?    @db.VarChar(255)
+  reply         String?    @db.VarChar(255)
+  reply_image   String?    @db.Text
+  store_id      BigInt?
+  sku_id        BigInt?
+  status        String?    @default("OPEN") @db.VarChar(255)
+  service_score Int?
+  grade         String?    @db.VarChar(255)
+  goods         goods?     @relation(fields: [goods_id], references: [id], onDelete: Cascade, map: "fk_user_evaluation_goods_id")
+  user          user?      @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_user_evaluation_member_id")
+  order         order?     @relation(fields: [order_no], references: [sn], onDelete: Cascade, onUpdate: NoAction, map: "fk_user_evaluation_order_no")
+  goods_sku     goods_sku? @relation(fields: [sku_id], references: [id], onDelete: Cascade, map: "fk_user_evaluation_sku_id")
+  store         store?     @relation(fields: [store_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_user_evaluation_store_id")
 
   @@index([order_no], map: "fk_user_evaluation_order_no")
-  @@index([sku_id], map: "fk_user_evaluation_sku_id")
-  @@index([store_id], map: "fk_user_evaluation_store_id")
   @@index([goods_id, user_id, store_id, sku_id], map: "goods_id")
   @@index([user_id], map: "fk_user_evaluation_user_id")
-}
-
-model user_role {
-  id      BigInt  @id
-  role_id BigInt?
-  user_id BigInt?
-  role    role?   @relation(fields: [role_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fk_user_role_role_id")
-  user    user?   @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "fk_user_role_user_id")
-
-  @@index([role_id], map: "role_id")
-  @@index([user_id], map: "user_id")
+  @@index([sku_id], map: "fk_user_evaluation_sku_id2")
+  @@index([store_id], map: "fk_user_evaluation_store_id2")
 }
 
 model payment_log {
-  id           BigInt    @id
+  id           BigInt    @id @default(autoincrement())
   create_by    String?   @db.VarChar(255)
   create_time  DateTime? @db.DateTime(6)
   delete_flag  Boolean?  @db.Bit(1)
@@ -429,13 +396,14 @@ model payment_log {
   sn           String?   @db.VarChar(255)
   store_id     BigInt?
   pay_status   String?   @db.VarChar(255)
+  type         String?   @db.VarChar(255)
   order        order?    @relation(fields: [sn], references: [sn], onDelete: NoAction, onUpdate: NoAction, map: "payment_log_ibfk_1")
-  store        store?    @relation(fields: [store_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "payment_log_store_1")
+  store        store?    @relation(fields: [store_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "payment_log_store_1")
   user         user?     @relation(fields: [member_id], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "payment_log_user_1")
 
   @@index([member_id, store_id], map: "member_id")
-  @@index([store_id], map: "payment_log_store_1")
   @@index([sn], map: "sn")
+  @@index([store_id], map: "payment_log_store_2")
 }
 
 model goods_unit {
@@ -447,4 +415,65 @@ model goods_unit {
   update_time                        DateTime? @db.Timestamp(0)
   name                               String?   @db.VarChar(255)
   goods_goods_goods_unitTogoods_unit goods[]   @relation("goods_goods_unitTogoods_unit")
+}
+
+/// This model or at least one of its fields has comments in the database, and requires an additional setup for migrations: Read more: https://pris.ly/d/database-comments
+model sub_order {
+  id            BigInt       @id @default(autoincrement())
+  order_sn      String       @db.VarChar(255)
+  store_id      BigInt
+  sub_total     Decimal?     @db.Decimal(10, 2)
+  status        String?      @db.VarChar(255)
+  create_time   DateTime?    @default(now()) @db.DateTime(0)
+  seller_remark String?      @db.VarChar(255)
+  order_item    order_item[]
+  order         order        @relation(fields: [order_sn], references: [sn], onDelete: Cascade, map: "fk_order_sub_order_sn")
+  store         store        @relation(fields: [store_id], references: [id], onDelete: Cascade, map: "fk_store_sub_order_id")
+
+  @@index([store_id], map: "fk_store_sub_order_id")
+  @@index([order_sn, store_id], map: "order_sn")
+}
+
+model message {
+  id                           BigInt    @id @default(autoincrement())
+  create_by                    String?   @db.VarChar(255)
+  create_time                  DateTime? @db.DateTime(0)
+  delete_flag                  Boolean?  @db.Bit(1)
+  update_by                    String?   @db.VarChar(255)
+  update_time                  DateTime? @db.DateTime(6)
+  from_user                    BigInt?
+  to_user                      BigInt?
+  is_read                      Boolean?  @db.Bit(1)
+  message_type                 String?   @db.VarChar(255)
+  text                         String?   @db.Text
+  talk_id                      BigInt?
+  user_message_from_userTouser user?     @relation("message_from_userTouser", fields: [from_user], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "fk_message_from_user")
+  talk                         talk?     @relation(fields: [talk_id], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "fk_message_talk")
+  user_message_to_userTouser   user?     @relation("message_to_userTouser", fields: [to_user], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "fk_message_to_user")
+
+  @@index([talk_id], map: "fk_message_talk")
+  @@index([to_user], map: "fk_message_to_user")
+  @@index([from_user, to_user, talk_id], map: "from_user")
+}
+
+model talk {
+  id                       BigInt    @id @default(autoincrement())
+  create_by                String?   @db.VarChar(255)
+  create_time              DateTime? @db.DateTime(0)
+  delete_flag              Boolean?  @db.Bit(1)
+  update_by                String?   @db.VarChar(255)
+  update_time              DateTime? @db.DateTime(6)
+  user_id1                 BigInt?
+  user_id2                 BigInt?
+  store_flag1              Boolean?  @db.Bit(1)
+  store_flag2              Boolean?  @db.Bit(1)
+  last_talk_time           DateTime? @db.DateTime(0)
+  last_talk_message        String?   @db.Text
+  last_message_type        String?   @db.VarChar(255)
+  message                  message[]
+  user_talk_user_id1Touser user?     @relation("talk_user_id1Touser", fields: [user_id1], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "fk_talk_user_id1")
+  user_talk_user_id2Touser user?     @relation("talk_user_id2Touser", fields: [user_id2], references: [id], onDelete: Restrict, onUpdate: Restrict, map: "fk_talk_user_id2")
+
+  @@index([user_id2], map: "fk_talk_user_id2")
+  @@index([user_id1, user_id2], map: "user_id1")
 }

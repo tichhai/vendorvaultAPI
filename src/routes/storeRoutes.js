@@ -24,7 +24,6 @@ function resultSuccess() {
 
 // GET /manager/store/store
 router.get('/store', async (req, res) => {
-  console.log('Fetching store list with query:', req.query);
   const pageNo = parseInt(req.query.pageNumber) || 1;
   const pageSize = parseInt(req.query.pageSize) || 10;
 
@@ -46,11 +45,14 @@ router.get('/store', async (req, res) => {
         where,
         skip: (pageNo - 1) * pageSize,
         take: pageSize,
-        orderBy: { id: 'asc' }
+        orderBy: { id: 'asc' },
+        include: {
+          user: { select: { id: true } }
+        }
       }),
       prisma.store.count({ where })
     ]);
-    // Format create_time sang dd-mm-yyyy cho từng record
+    // Format create_time sang dd-mm-yyyy cho từng record và thêm userId
     const recordsWithFormattedDates = records.map(record => {
       let formattedCreateTime = record.create_time;
       if (formattedCreateTime) {
@@ -60,9 +62,12 @@ router.get('/store', async (req, res) => {
         const year = date.getFullYear();
         formattedCreateTime = `${day}-${month}-${year}`;
       }
+      // Lấy userId đầu tiên nếu có
+      const userId = record.user && record.user.length > 0 ? record.user[0].id : null;
       return {
         ...record,
-        create_time: formattedCreateTime
+        create_time: formattedCreateTime,
+        userId
       };
     });
     const result = {
@@ -138,15 +143,19 @@ router.get('/store/get/detail/:id', async (req, res) => {
   try {
     let store = await prisma.store.findUnique({
       where: { id: id },
-      include: { user: true } 
+      include: {
+        user: { select: { id: true, username: true } }
+      }
     });
     store = {
         ...store,
         storeLogo: store.store_logo ? store.store_logo : null,
+        user: store.user && store.user.length > 0 ? store.user[0] : null
     }
     const result = camelcaseKeys(store, { deep: true });
     res.json(resultData(result));
   } catch (e) {
+    console.error('Error fetching store details:', e);
     res.json({ code: 500, message: 'Internal server error', data: null });
   }
 });
