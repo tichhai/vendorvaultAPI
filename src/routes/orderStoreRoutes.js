@@ -273,17 +273,43 @@ router.put('/order/updateOrderStatus', async (req, res) => {
     return res.status(400).json({ code: 400, message: 'No Info', data: null });
   }
   try {
+    // Ensure subOrderId is a number
+    const subOrderIdNum = typeof subOrderId === 'string' ? Number(subOrderId) : subOrderId;
+    // Update sub_order status
     await prisma.sub_order.update({
-      where: { id: subOrderId },
+      where: { id: subOrderIdNum },
       data: { status: orderStatus }
     });
+
+    // Refetch all sub_orders after update
+    const allSubOrders = await prisma.sub_order.findMany({
+      where: { order_sn: sn }
+    });
+    const allPaid = allSubOrders.length > 0 && allSubOrders.every(sub => sub.status === 'PAID');
+    if (allPaid) {
+      const orderExist = await prisma.order.findUnique({ where: { sn } });
+      if (orderExist) {
+        await prisma.order.update({
+          where: { sn },
+          data: { order_status: 'PAID' }
+        });
+      }
+    }
+    const allCom = allSubOrders.length > 0 && allSubOrders.every(sub => sub.status === 'COMPLETED');
+    if (allCom) {
+      const orderExist = await prisma.order.findUnique({ where: { sn } });
+      if (orderExist) {
+        await prisma.order.update({
+          where: { sn },
+          data: { order_status: 'COMPLETED' }
+        });
+      }
+    }
     res.json(resultSuccess());
   } catch (error) {
     console.error('Error updating order status:', error);
     res.status(500).json({ code: 500, message: error.message, data: null });
   }
 });
-
-
 
 module.exports = router;

@@ -188,7 +188,7 @@ router.post('/passport/member/userLogin', async (req, res) => {
   }
 
   try {
-    const member = await prisma.user.findUnique({ where: { username } });
+    const member = await prisma.user.findUnique({ where: { username,disabled:false } });
     if (!member) {
       return res.status(400).json({ code: 400, message: 'No user', data: null });
     }
@@ -267,11 +267,15 @@ router.get('/goods/goods/es', async (req, res) => {
   const { categoryId, keyword, sort, prop, order, storeId } = req.query;
   const page = Number(req.query.pageNumber) || 1;
   const size = Number(req.query.pageSize) || 10;
+  // Chỉ lấy sản phẩm từ các store còn hạn thanh toán và user không bị disable
   let where = {
     market_enable: "UPPER",
     store: {
       payment_due_date: {
-        gt: new Date()
+        gte: new Date()
+      },
+      user: {
+        some: { disabled: false }
       }
     }
   };
@@ -398,7 +402,18 @@ router.get('/goods/goods/es', async (req, res) => {
 router.get('/goods/goods/es/related', async (req, res) => {
   const { brandId, categoryId, keyword,sort,prop } = req.query;
   try {
-    let goodsWhere = {};
+    // Chỉ lấy sản phẩm từ các store còn hạn thanh toán và user không bị disable
+    let goodsWhere = {
+      market_enable: "UPPER",
+      store: {
+        payment_due_date: {
+          gte: new Date()
+        },
+        user: {
+          some: { disabled: false }
+        }
+      }
+    };
     if (brandId) goodsWhere.brand_id = Number(brandId);
     if (categoryId) goodsWhere.category_id = Number(categoryId);
     if (keyword) goodsWhere.goods_name = { contains: keyword };
@@ -412,7 +427,7 @@ router.get('/goods/goods/es/related', async (req, res) => {
         .filter(Boolean);
       if (brandNames.length > 0) {
         // Lấy id các brand theo tên
-        const brandsInDb = await prisma.brand.findMany({ where: { name: { in: brandNames } } });
+        const brandsInDb = await prisma.brand.findMany({ where: { name: { in: brandNames },delete_flag:false } });
         const brandIdsFromProp = brandsInDb.map(b => b.id);
         if (brandIdsFromProp.length > 0) {
           goodsWhere.brand_id = { in: brandIdsFromProp };
@@ -437,9 +452,9 @@ router.get('/goods/goods/es/related', async (req, res) => {
       // Lấy các brand_id thuộc category này từ bảng category_brand
       const categoryBrands = await prisma.category_brand.findMany({ where: { category_id: Number(categoryId) } });
       const brandIdsInCategory = categoryBrands.map(cb => cb.brand_id).filter(Boolean);
-      brandsRaw = await prisma.brand.findMany({ where: { id: { in: brandIdsInCategory } }, orderBy: { id: 'asc' } });
+      brandsRaw = await prisma.brand.findMany({ where: { id: { in: brandIdsInCategory },delete_flag:false }, orderBy: { id: 'asc' } });
     } else {
-      brandsRaw = await prisma.brand.findMany({ orderBy: { id: 'asc' } });
+      brandsRaw = await prisma.brand.findMany({where:{delete_flag:false}, orderBy: { id: 'asc' } });
     }
     const brands = brandsRaw.map(brand => ({
       name: brand.name,
@@ -928,6 +943,7 @@ router.get('/store/store/get/detail/:id',authMiddleware, async (req, res) => {
 
 // POST /buyer/member/address
 router.post('/member/address',authMiddleware, async (req, res) => {
+  console.log('Creating address',req.body);
   const {name,detail,mobile,alias,isDefault = false} = req.body;
   const userId = req.tokenUser.id; 
 
@@ -936,6 +952,16 @@ router.post('/member/address',authMiddleware, async (req, res) => {
   }
 
   try {
+    // Nếu muốn tạo địa chỉ mặc định, kiểm tra đã có chưa
+    const wantDefault = isDefault === true || isDefault === '1';
+    if (wantDefault) {
+      const existDefault = await prisma.user_address.findFirst({
+        where: { user_id: userId, is_default: true }
+      });
+      if (existDefault) {
+        return res.status(400).json({ code: 400, message: 'User already has a default address', data: null });
+      }
+    }
     const newAddress = await prisma.user_address.create({
       data: {
         user_id: userId,
@@ -943,10 +969,9 @@ router.post('/member/address',authMiddleware, async (req, res) => {
         detail: detail,
         mobile: mobile,
         alias: alias,
-        is_default: !!isDefault
+        is_default: wantDefault
       }
     });
-
     res.json(resultData());
   } catch (error) {
     console.error('Error creating address:', error);
@@ -969,7 +994,16 @@ router.put('/member/address/:id',authMiddleware, async (req, res) => {
     if (!exist) {
       return res.status(404).json({ code: 404, message: 'No address', data: null });
     }
-    // Sửa lại: update theo id (unique key)
+    const wantDefault = isDefault === true || isDefault === '1';
+    if (wantDefault) {
+      // Nếu muốn sửa thành mặc định, kiểm tra đã có chưa (trừ chính địa chỉ này)
+      const existDefault = await prisma.user_address.findFirst({
+        where: { user_id: userId, is_default: true, NOT: { id: exist.id } }
+      });
+      if (existDefault) {
+        return res.status(400).json({ code: 400, message: 'User already has a default address', data: null });
+      }
+    }
     const updatedAddress = await prisma.user_address.update({
       where: { id: exist.id },
       data: {
@@ -977,7 +1011,7 @@ router.put('/member/address/:id',authMiddleware, async (req, res) => {
         detail: detail,
         mobile: mobile,
         alias: alias,
-        is_default: !!isDefault
+        is_default: wantDefault
       }
     });
     res.json(resultData());
@@ -1672,7 +1706,6 @@ router.get('/member/evaluation/get/:id', async (req, res) => {
   }
 });
 
-//asd bỏ??
 // GET /buyer/label/get/:id
 router.get('/label/get/:id', async (req, res) => {
   const { id } = req.params;
@@ -1718,9 +1751,10 @@ function buildCategoryTree(categories, parent_id = null) {
     }));
 }
 
-// GET /manager/goods/category/allChildren
+// GET /buyer/goods/category/get/:parentId
 router.get('/goods/category/get/:parentId', async (req, res) => {
   const categories = await prisma.category.findMany({
+    where: { delete_flag:false },
     orderBy: { sort_order: 'asc' } 
   });
   let categoriesFixCommissionRate = categories.map(cat => ({
@@ -1768,7 +1802,7 @@ async function refreshTokenService(refreshToken) {
     } catch (err) {
         throw new Error('Invalid or expired refreshToken');
     }
-    const user = await prisma.admin_user.findUnique({ where: { username: payload.username } });
+    const user = await prisma.user.findUnique({ where: { username: payload.username } });
     if (!user) {
         throw new Error('User not found');
     }
@@ -1814,6 +1848,9 @@ router.post('/api/create-order', async (req, res) => {
     // Lấy user và địa chỉ mặc định
     const user = await prisma.user.findUnique({ where: { id: userId } });
     const userAddress = await prisma.user_address.findFirst({ where: { user_id: userId, is_default: true } });
+    if (!userAddress) {
+      return res.status(405).json({ error: 'No default address found. Please set a default address before ordering.' });
+    }
     // Gom nhóm items theo storeId
     const storeMap = {};
     for (const item of items) {
@@ -1842,7 +1879,18 @@ router.post('/api/create-order', async (req, res) => {
         create_time: now
       });
     }
-    // Tạo order
+    // Kiểm tra tồn kho cho tất cả items trước khi tạo order
+    for (const item of items) {
+      const sku = await prisma.goods_sku.findUnique({ where: { id: BigInt(item.skuId) } });
+      if (!sku || sku.quantity < Number(item.quantity)) {
+        return res.status(400).json({ error: `SKU ${item.skuId} Not enough quantity!` });
+      }
+      const goods = await prisma.goods.findUnique({ where: { id: BigInt(item.goodsId) } });
+      if (!goods || goods.quantity < Number(item.quantity)) {
+        return res.status(400).json({ error: `GoodsID: ${item.goodsId} Not enough quantity!` });
+      }
+    }
+    // Nếu tất cả đều đủ kho, tiến hành tạo order
     const order = await prisma.order.create({
       data: {
         sn: orderSn,
@@ -1875,6 +1923,24 @@ router.post('/api/create-order', async (req, res) => {
             sub_order_id: createdSub.id,
             create_time: now,
             update_time: now
+          }
+        });
+        // Trừ số lượng sản phẩm trong goods_sku
+        await prisma.goods_sku.update({
+          where: { id: BigInt(item.skuId) },
+          data: {
+            quantity: {
+              decrement: Number(item.quantity)
+            }
+          }
+        });
+        // Trừ số lượng sản phẩm trong goods
+        await prisma.goods.update({
+          where: { id: BigInt(item.goodsId) },
+          data: {
+            quantity: {
+              decrement: Number(item.quantity)
+            }
           }
         });
       }
@@ -1963,13 +2029,27 @@ router.post('/api/reset-password', async (req, res) => {
 // GET /buyer/goods/goods/firstFour
 router.get('/goods/goods/firstFour', async (req, res) => {
   try {
+    const now = new Date();
     const goods = await prisma.goods.findMany({
+      where: {
+        market_enable: 'UPPER',
+        auth_flag: 'PASS',
+        store: {
+          payment_due_date: { gte: now },
+          user: {
+            some: { disabled: false }
+          }
+        }
+      },
       orderBy: { create_time: 'asc' },
       take: 4,
       include: {
         goods_gallery: {
           take: 1,
           orderBy: { sort: 'asc' }
+        },
+        store: {
+          select: { payment_due_date: true, id: true }
         }
       }
     });
@@ -1986,20 +2066,34 @@ router.get('/goods/goods/firstFour', async (req, res) => {
 // GET /buyer/goods/goods/recommended
 router.get('/goods/goods/recommended', async (req, res) => {
   try {
+    const now = new Date();
     const goods = await prisma.goods.findMany({
-      where: { recommend: true },
+      where: {
+        recommend: true,
+        market_enable: 'UPPER',
+        auth_flag: 'PASS',
+        store: {
+          payment_due_date: { gte: now },
+          user: {
+            some: { disabled: false }
+          }
+        }
+      },
       take: 4,
       include: {
         goods_gallery: {
           take: 1,
           orderBy: { sort: 'asc' }
+        },
+        store: {
+          select: { payment_due_date: true, id: true }
         }
       }
     });
     const result = goods.map(good => ({
       ...good,
       price: good.price && typeof good.price.toNumber === 'function' ? good.price.toNumber() : good.price,
-      url:"/goodsList"
+      url: "/goodsList"
     }));
     const camelCaseResult = camelcaseKeys(result, { deep: true });
     res.json(resultData(camelCaseResult));

@@ -426,6 +426,7 @@ router.post('/goods/create',authMiddleware, async (req, res) => {
     create_time: new Date(),
     update_time: new Date(),
     auth_flag: "TOBEAUDITED",
+    market_enable:"DOWN",
     brand: body.brandId ? { connect: { id: BigInt(body.brandId) } } : undefined,
     category: body.categoryPath ? { connect: { id: BigInt(body.categoryPath.split(',').pop()) } } : undefined,
   };

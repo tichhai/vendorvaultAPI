@@ -58,8 +58,8 @@ router.get("/login/userLogin", authMiddleware, async (req, res) => {
     return res.status(401).json(resultErrorMsg("No token", 401));
   }
   // Tìm user theo username
-  const adminUser = await prisma.admin_user.findUnique({
-    where: { username: tokenUser.username },
+  const adminUser = await prisma.user.findUnique({
+    where: { username: tokenUser.username,disabled: false },
   });
   if (!adminUser) {
     return res.status(401).json(resultErrorMsg("User not found", 401));
@@ -87,7 +87,7 @@ router.post("/login/userLogin", upload.none(), async (req, res) => {
       .status(400)
       .json(resultErrorMsg("Password cannot be empty", 400));
   try {
-    const user = await prisma.user.findUnique({ where: { username },include: { store: true } });
+    const user = await prisma.user.findUnique({ where: { username,disabled:false },include: { store: true } });
     if (!user || user.password !== password) {
       return res
         .status(401)
@@ -121,7 +121,7 @@ async function refreshTokenService(refreshToken) {
     } catch (err) {
         throw new Error('Invalid or expired refreshToken');
     }
-    const user = await prisma.admin_user.findUnique({ where: { username: payload.username } });
+    const user = await prisma.user.findUnique({ where: { username: payload.username} });
     if (!user) {
         throw new Error('User not found');
     }
